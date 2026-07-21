@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="th">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<head>
+<meta charset="UTF-8">
+<title>NOC Kanchanaburi — Network Alarm Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-void:#0B1418;
+    --bg-panel:#101E24;
+    --bg-panel-alt:#142832;
+    --fiber-teal:#17B8A6;
+    --fiber-teal-dim:rgba(23,184,166,.18);
+    --signal-amber:#F2A93B;
+    --pon-yellow:#FFD400;
+    --alarm-red:#FF4E4E;
+    --alarm-red-dim:rgba(255,78,78,.15);
+    --text-primary:#E8F1F0;
+    --text-muted:#6C8A88;
+    --grid-line:#1C2E33;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg-void);color:var(--text-primary);
+    font-family:'Inter','Noto Sans Thai',sans-serif; overflow-x:hidden;}
+  h1,h2,h3,.display{font-family:'Space Grotesk','Noto Sans Thai',sans-serif;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+
+  #app{max-width:1440px;margin:0 auto;padding:18px 22px 40px;}
+
+  /* ---------- top bar ---------- */
+  .topbar{display:flex;align-items:center;justify-content:space-between;
+    padding-bottom:14px;border-bottom:1px solid var(--grid-line);margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand .mark{width:38px;height:38px;border-radius:9px;background:linear-gradient(135deg,var(--fiber-teal),#0d6e63);
+    display:flex;align-items:center;justify-content:center;box-shadow:0 0 18px var(--fiber-teal-dim);flex-shrink:0;}
+  .brand .mark svg{width:20px;height:20px;}
+  .brand .eyebrow{font-size:11px;letter-spacing:.14em;color:var(--fiber-teal);text-transform:uppercase;font-weight:600;}
+  .brand h1{font-size:19px;margin:0;font-weight:600;letter-spacing:.01em;}
+  .status-cluster{display:flex;align-items:center;gap:18px;}
+  .clock{font-size:13px;color:var(--text-muted);text-align:right;}
+  .clock .time{color:var(--text-primary);font-size:15px;font-weight:600;}
+  .system-badge{display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;
+    background:var(--alarm-red-dim);border:1px solid rgba(255,78,78,.35);font-size:12.5px;font-weight:600;}
+  .system-badge.ok{background:var(--fiber-teal-dim);border-color:rgba(23,184,166,.35);}
+  .system-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--alarm-red);
+    box-shadow:0 0 6px var(--alarm-red);animation:blink 1.4s infinite;}
+  .system-badge.ok .dot{background:var(--fiber-teal);box-shadow:0 0 6px var(--fiber-teal);animation:none;}
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+
+  /* ---------- ticker ---------- */
+  .ticker-wrap{background:var(--bg-panel);border:1px solid var(--grid-line);border-radius:8px;
+    overflow:hidden;margin-bottom:16px;display:flex;align-items:center;height:34px;}
+  .ticker-label{background:var(--alarm-red);color:#1a0505;font-weight:700;font-size:11px;letter-spacing:.08em;
+    padding:0 12px;height:100%;display:flex;align-items:center;flex-shrink:0;}
+  .ticker-track{white-space:nowrap;overflow:hidden;flex:1;position:relative;height:100%;}
+  .ticker-content{display:inline-flex;align-items:center;height:100%;animation:tickerMove 30s linear infinite;padding-left:100%;}
+  .ticker-content span{padding:0 28px;font-size:12.5px;color:var(--text-primary);white-space:nowrap;}
+  .ticker-content span b{color:var(--alarm-red);}
+  @keyframes tickerMove{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
+
+  /* ---------- layout ---------- */
+  .grid-main{display:grid;grid-template-columns:1fr 300px;gap:16px;margin-bottom:16px;}
+  @media(max-width:980px){.grid-main{grid-template-columns:1fr;}}
+
+  .panel{background:var(--bg-panel);border:1px solid var(--grid-line);border-radius:var(--radius);padding:16px;}
+  .panel-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap;}
+  .panel-title h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin:0;font-weight:600;}
+  .panel-title .count{font-family:'JetBrains Mono';font-size:12px;color:var(--fiber-teal);}
+
+  /* ---------- map ---------- */
+  .map-panel{position:relative;padding:0;overflow:hidden;}
+  #map{height:480px;width:100%;background:#0d171b;}
+  .map-header{position:absolute;top:0;left:0;right:0;z-index:500;padding:14px 16px;
+    background:linear-gradient(to bottom, rgba(11,20,24,.92), transparent);pointer-events:none;}
+  .map-header h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin:0 0 2px;font-weight:600;}
+  .map-header .sub{font-size:11.5px;color:var(--text-muted);}
+  .map-legend{position:absolute;bottom:12px;left:14px;z-index:500;background:rgba(16,30,36,.9);
+    border:1px solid var(--grid-line);border-radius:7px;padding:8px 12px;font-size:11.5px;color:var(--text-muted);
+    display:flex;align-items:center;gap:8px;}
+  .map-legend .lg-dot{width:9px;height:9px;border-radius:50%;background:var(--alarm-red);box-shadow:0 0 6px var(--alarm-red);}
+  .radar-sweep{position:absolute;top:14px;right:14px;width:40px;height:40px;border-radius:50%;z-index:500;
+    border:1px solid rgba(23,184,166,.35);pointer-events:none;overflow:hidden;}
+  .radar-sweep::after{content:'';position:absolute;inset:0;
+    background:conic-gradient(from 0deg, var(--fiber-teal) 0deg, transparent 60deg);
+    animation:spin 3s linear infinite;opacity:.55;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .pulse-marker{position:relative;width:18px;height:18px;}
+  .pulse-marker .ring{position:absolute;inset:0;border-radius:50%;border:2px solid var(--alarm-red);
+    animation:pulseRing 1.7s ease-out infinite;}
+  .pulse-marker .dot{position:absolute;width:11px;height:11px;border-radius:50%;background:var(--alarm-red);
+    top:3.5px;left:3.5px;box-shadow:0 0 10px var(--alarm-red);}
+  @keyframes pulseRing{0%{transform:scale(.35);opacity:1;}100%{transform:scale(2.8);opacity:0;}}
+  .pulse-marker.pon-marker .ring{border-color:var(--pon-yellow);}
+  .pulse-marker.pon-marker .dot{background:var(--pon-yellow);box-shadow:0 0 10px var(--pon-yellow);}
+  .leaflet-popup-content-wrapper{background:var(--bg-panel-alt);color:var(--text-primary);border-radius:8px;
+    border:1px solid var(--grid-line);padding:2px;}
+  .leaflet-popup-tip{background:var(--bg-panel-alt);}
+  .leaflet-popup-content{margin:12px;}
+  .popup-body b{color:var(--alarm-red);}
+  .popup-title{font-family:'Space Grotesk';font-weight:600;font-size:13.5px;margin-bottom:6px;border-bottom:1px solid var(--grid-line);padding-bottom:4px;}
+  .popup-row{font-size:12px;color:var(--text-muted);margin:3px 0;line-height:1.4;}
+  .popup-row span{color:var(--text-primary);}
+  .popup-alert-line{margin-top:5px;padding-top:4px;border-top:1px solid rgba(28,46,51,.5);}
+
+  /* ---------- KPI stack ---------- */
+  .kpi-stack{display:flex;flex-direction:column;gap:10px;}
+  .kpi{background:var(--bg-panel);border:1px solid var(--grid-line);border-radius:var(--radius);padding:13px 15px;
+    display:flex;flex-direction:column;gap:2px;flex:1;}
+  .kpi .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:600;}
+  .kpi .value{font-family:'Space Grotesk';font-size:26px;font-weight:700;}
+  .kpi .value.red{color:var(--alarm-red);}
+  .kpi .value.teal{color:var(--fiber-teal);}
+  .kpi .value.amber{color:var(--signal-amber);}
+  .kpi .sub{font-size:11px;color:var(--text-muted);}
+
+  /* ---------- filter bar ---------- */
+  .filter-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;
+    background:var(--bg-panel);border:1px solid var(--grid-line);border-radius:var(--radius);padding:10px 14px;}
+  .filter-bar .fb-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-right:4px;}
+  .fbtn{background:transparent;border:1px solid var(--grid-line);color:var(--text-muted);padding:7px 14px;
+    border-radius:7px;font-size:12.5px;cursor:pointer;font-family:inherit;font-weight:500;transition:.15s;}
+  .fbtn:hover{border-color:var(--fiber-teal);color:var(--text-primary);}
+  .fbtn.active{background:var(--fiber-teal-dim);border-color:var(--fiber-teal);color:var(--fiber-teal);}
+  .fbtn.custom-apply{background:var(--fiber-teal);color:#062421;border-color:var(--fiber-teal);margin-left:4px;}
+  .date-inputs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .date-inputs input{background:var(--bg-panel-alt);border:1px solid var(--grid-line);color:var(--text-primary);
+    padding:6px 8px;border-radius:6px;font-family:'JetBrains Mono';font-size:12px;width:130px;}
+  .date-inputs span{color:var(--text-muted);font-size:12px;}
+
+  /* ---------- charts row ---------- */
+  .grid-charts{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:16px;margin-bottom:16px;}
+  @media(max-width:980px){.grid-charts{grid-template-columns:1fr;}}
+  .chart-box{height:220px;position:relative;margin-top:10px;}
+
+  /* ---------- tables ---------- */
+  table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:600px;}
+  th{text-align:left;color:var(--text-muted);font-weight:600;text-transform:uppercase;font-size:10.5px;
+    letter-spacing:.05em;padding:8px 10px;border-bottom:1px solid var(--grid-line);position:sticky;top:0;background:var(--bg-panel);z-index:10;}
+  td{padding:9px 10px;border-bottom:1px solid rgba(28,46,51,.6);vertical-align:middle;}
+  tr:hover td{background:rgba(23,184,166,.04);}
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;}
+  .badge.down{background:var(--alarm-red-dim);color:var(--alarm-red);}
+  .badge.up{background:var(--fiber-teal-dim);color:var(--fiber-teal);}
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .type-tag{font-family:'JetBrains Mono';font-size:11px;color:var(--text-muted);
+    border:1px solid var(--grid-line);padding:2px 7px;border-radius:5px;}
+  .site-cell{font-weight:600;}
+  .site-cell .ip{display:block;font-family:'JetBrains Mono';font-size:10.5px;color:var(--text-muted);font-weight:400;margin-top:1px;}
+  .site-cell .closure{display:block;color:var(--text-muted);font-size:10.5px;font-weight:400;margin-top:1px;}
+  .search-box{background:var(--bg-panel-alt);border:1px solid var(--grid-line);color:var(--text-primary);
+    padding:7px 11px;border-radius:7px;font-size:12.5px;width:220px;font-family:inherit;}
+  .table-scroll{max-height:380px;overflow:auto;margin-top:10px;border:1px solid rgba(28,46,51,.5);border-radius:6px;}
+  .empty-row td{text-align:center;color:var(--text-muted);padding:30px;}
+  
+  .table-scroll::-webkit-scrollbar {width:7px;height:7px;}
+  .table-scroll::-webkit-scrollbar-track {background:transparent;}
+  .table-scroll::-webkit-scrollbar-thumb {background:var(--grid-line);border-radius:10px;}
+  .table-scroll::-webkit-scrollbar-thumb:hover {background:var(--text-muted);}
+
+  /* ---------- site reliability ---------- */
+  .reliability-panel .panel-title{margin-bottom:2px;}
+  .reliability-sub{font-size:11.5px;color:var(--text-muted);margin-bottom:12px;}
+  .rel-group{margin-top:14px;}
+  .rel-group:first-of-type{margin-top:6px;}
+  .rel-group-title{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;}
+  .rel-group-title .sw{width:9px;height:9px;border-radius:3px;flex-shrink:0;}
+  .rel-header-row,.rel-row{display:flex;align-items:center;gap:12px;}
+  .rel-header-row{padding:0 0 6px;border-bottom:1px solid var(--grid-line);}
+  .rel-header-row>div{color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
+  .rel-row{padding:9px 0;border-bottom:1px solid rgba(28,46,51,.55);}
+  .rel-row:last-child{border-bottom:none;}
+  .rel-site{width:150px;flex-shrink:0;font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rel-track{flex:1;height:14px;position:relative;background:var(--bg-panel-alt);border-radius:3px;overflow:visible;min-width:120px;}
+  .rel-seg{position:absolute;top:0;bottom:0;background:var(--alarm-red);cursor:pointer;transition:filter .12s;}
+  .rel-seg:hover{filter:brightness(1.35);}
+
+  /* ---------- downtime hover tooltip ---------- */
+  .rel-tooltip{position:fixed;z-index:10000;background:var(--bg-panel-alt);border:1px solid var(--grid-line);
+    border-radius:8px;padding:10px 13px;font-size:11.5px;color:var(--text-primary);pointer-events:none;
+    box-shadow:0 10px 26px rgba(0,0,0,.45);min-width:180px;max-width:250px;line-height:1.5;
+    display:none;opacity:0;transition:opacity .1s;}
+  .rel-tooltip.show{display:block;opacity:1;}
+  .rel-tooltip .tt-title{font-weight:700;color:var(--alarm-red);margin-bottom:6px;font-family:'Space Grotesk';
+    font-size:12px;padding-bottom:5px;border-bottom:1px solid var(--grid-line);}
+  .rel-tooltip .tt-row{display:flex;justify-content:space-between;gap:14px;color:var(--text-muted);margin:3px 0;}
+  .rel-tooltip .tt-row b{color:var(--text-primary);font-family:'JetBrains Mono',monospace;font-weight:500;font-size:11px;}
+  .rel-tooltip .tt-row b.ongoing{color:var(--alarm-red);font-weight:700;}
+  .rel-time-track{background:transparent;height:auto;}
+  .rel-time-labels{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);}
+  .rel-count{width:44px;flex-shrink:0;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;}
+  .rel-total{width:92px;flex-shrink:0;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;}
+  .rel-avail{width:74px;flex-shrink:0;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:700;color:var(--fiber-teal);}
+  .rel-avail.bad{color:var(--alarm-red);}
+  .rel-avail.warn{color:var(--signal-amber);}
+  .rel-empty{padding:16px 0;text-align:center;color:var(--text-muted);font-size:12px;}
+  @media(max-width:700px){ .rel-site{width:100px;} .rel-total{width:74px;} }
+
+  .loading-overlay{position:fixed;inset:0;background:rgba(11,20,24,.85);z-index:9999;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    backdrop-filter:blur(3px);visibility:hidden;opacity:0;transition:.2s;}
+  .loading-overlay.active{visibility:visible;opacity:1;}
+  .spinner{width:30px;height:30px;border:3px solid var(--fiber-teal-dim);border-top-color:var(--fiber-teal);
+    border-radius:50%;animation:spin .8s linear infinite;margin-bottom:12px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay active" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div style="font-size:13px;color:var(--text-muted);">กำลังโหลดข้อมูลสดจาก Google Sheet...</div>
+</div>
+
+<div class="rel-tooltip" id="relTooltip"></div>
+
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 16 0M7 12a5 5 0 0 1 10 0M10 12a2 2 0 0 1 4 0M12 12v9" stroke="#06231f" stroke-width="2" stroke-linecap="round"/></svg></div>
+      <div>
+        <div class="eyebrow">Network Operations Center</div>
+        <h1>กาญจนบุรี — Alarm &amp; Availability Dashboard</h1>
+      </div>
+    </div>
+    <div class="status-cluster">
+      <div class="clock">
+        <div>เวลาปัจจุบัน (ICT)</div>
+        <div class="time mono" id="clockTime">—</div>
+      </div>
+      <div class="system-badge" id="systemBadge"><span class="dot"></span><span id="systemBadgeText">กำลังโหลด...</span></div>
+    </div>
+  </div>
+
+  <div class="ticker-wrap">
+    <div class="ticker-label">LIVE</div>
+    <div class="ticker-track"><div class="ticker-content" id="tickerContent"><span>กำลังรอข้อมูล...</span></div></div>
+  </div>
+
+  <div class="grid-main">
+    <div class="panel map-panel">
+      <div class="map-header">
+        <h2>แผนที่เครือข่ายจังหวัดกาญจนบุรี</h2>
+        <div class="sub">จุดกระพริบสีแดง = ไซต์/พอร์ตที่กำลัง DOWN อยู่ในขณะนี้ — คลิกจุดเพื่อดูรายละเอียด</div>
+      </div>
+      <div class="radar-sweep"></div>
+      <div id="map"></div>
+      <div class="map-legend"><span class="lg-dot"></span> Active DOWN (คลิกเพื่อดูรายละเอียด)</div>
+    </div>
+
+    <div class="kpi-stack" id="kpiStack">
+      <div class="kpi"><div class="label">Active ขณะนี้</div><div class="value red mono">—</div><div class="sub">...</div></div>
+      <div class="kpi"><div class="label">เหตุการณ์ในช่วงที่เลือก</div><div class="value teal mono">—</div><div class="sub">...</div></div>
+      <div class="kpi"><div class="label">MTTR เฉลี่ย</div><div class="value amber mono">—</div><div class="sub">...</div></div>
+      <div class="kpi"><div class="label">SLA Breached</div><div class="value red mono">—</div><div class="sub">...</div></div>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <span class="fb-label">ช่วงเวลาประวัติ</span>
+    <button class="fbtn" data-range="today">วันนี้</button>
+    <button class="fbtn active" data-range="7d">7 วัน</button>
+    <button class="fbtn" data-range="30d">30 วัน</button>
+    <div class="date-inputs">
+      <input type="date" id="dateFrom"><span>ถึง</span><input type="date" id="dateTo">
+      <button class="fbtn custom-apply" id="applyCustom">Apply</button>
+    </div>
+  </div>
+
+  <div class="grid-charts">
+    <div class="panel">
+      <div class="panel-title"><h2>เหตุการณ์ตามประเภท (ประวัติ)</h2></div>
+      <div class="chart-box"><canvas id="chartType"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><h2>Top 6 ไซต์ที่มี Downtime รวม (นาที)</h2></div>
+      <div class="chart-box"><canvas id="chartTop"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><h2>แนวโน้มเหตุการณ์รายวัน</h2></div>
+      <div class="chart-box"><canvas id="chartTrend"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel reliability-panel" style="margin-bottom:16px;">
+    <div class="panel-title">
+      <h2 id="reliabilityTitle">Site Reliability — วันนี้ (24 ชม. ล่าสุด)</h2>
+    </div>
+    <div class="reliability-sub" id="reliabilitySub">ไทม์ไลน์เหตุการณ์ Down ต่อไซต์ในช่วง 24 ชม. ล่าสุด — แต่ละแถบสีแดง = 1 รอบไฟดับ</div>
+
+    <div class="rel-group">
+      <div class="rel-group-title" style="color:var(--signal-amber);"><span class="sw" style="background:var(--signal-amber);"></span>NODE</div>
+      <div class="rel-header-row">
+        <div class="rel-site">ไซต์</div>
+        <div class="rel-track rel-time-track"><div class="rel-time-labels" id="relTimeLabelsNode"></div></div>
+        <div class="rel-count">ครั้ง</div>
+        <div class="rel-total">ดับรวม</div>
+        <div class="rel-avail" style="color:var(--text-muted);">AVAILABILITY</div>
+      </div>
+      <div id="relBodyNode"></div>
+    </div>
+
+    <div class="rel-group">
+      <div class="rel-group-title" style="color:var(--fiber-teal);"><span class="sw" style="background:var(--fiber-teal);"></span>PON</div>
+      <div class="rel-header-row">
+        <div class="rel-site">ไซต์</div>
+        <div class="rel-track rel-time-track"><div class="rel-time-labels" id="relTimeLabelsPon"></div></div>
+        <div class="rel-count">ครั้ง</div>
+        <div class="rel-total">ดับรวม</div>
+        <div class="rel-avail" style="color:var(--text-muted);">AVAILABILITY</div>
+      </div>
+      <div id="relBodyPon"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-title">
+      <h2>Active Alerts — ปัญหาที่กำลังเกิดขึ้น (Real-time)</h2>
+      <span class="count mono" id="activeCount">0 รายการ</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>สถานะ</th><th>ประเภท</th><th>ไซต์ / พอร์ต / IP</th><th>เริ่ม DOWN</th><th>ระยะเวลาดาวน์</th><th>ลูกค้ากระทบ</th><th>SLA</th><th>Power/Loss</th></tr></thead>
+        <tbody id="activeTbody"><tr class="empty-row"><td colspan="8">ไม่มีข้อมูล Active DOWN</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">
+      <h2>ประวัติเหตุการณ์ (ตามช่วงเวลาที่เลือก)</h2>
+      <input class="search-box" id="historySearch" placeholder="ค้นหาไซต์, ประเภท, IP...">
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>สถานะ</th><th>ประเภท</th><th>ไซต์ / พอร์ต</th><th>เริ่ม DOWN</th><th>กู้คืนเมื่อ</th><th>ระยะเวลา</th><th>ลูกค้า</th><th>สาเหตุ/รายละเอียด</th></tr></thead>
+        <tbody id="historyTbody"><tr class="empty-row"><td colspan="8">กำลังโหลดข้อมูลประวัติ...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let ALERTS = []; 
+let NOW = new Date();
+
+const KAN_BOUNDS = [[13.6, 98.1], [15.3, 100.0]];
+const KAN_CENTER = [14.45, 99.10]; 
+
+const TILE_PROVIDERS = [
+  { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    options:{ subdomains:'abcd', maxZoom:16, attribution:'&copy; OpenStreetMap &copy; CARTO' } },
+  { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', 
+    options:{ subdomains:'abc', maxZoom:19, attribution:'&copy; OpenStreetMap contributors' } }
+];
+
+const fmtDT = iso => iso ? new Date(iso).toLocaleString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).replace(',','') : '—';
+
+const fmtDur = mins => {
+  if(mins==null || mins === '' || isNaN(mins)) return '—';
+  mins = Math.round(mins);
+  const h=Math.floor(mins/60), m=Math.round(mins%60);
+  if(h>0) return `${h} ชม. ${m} นาที`;
+  return `${m} นาที`;
+};
+
+const calcDurationMin = a => {
+  const start=new Date(a.down);
+  if(isNaN(start)) return null;
+  const end = a.up ? new Date(a.up) : NOW;
+  if(isNaN(end)) return null;
+  return (end-start)/60000;
+};
+
+const typeLabel = t => String(t).toUpperCase();
+const typeColor = t => {
+  t = String(t).toUpperCase();
+  if(t==='NODE') return '#F2A93B'; 
+  if(t==='PON') return '#17B8A6';  
+  if(t==='LINK') return '#8fb8ff'; 
+  return '#6C8A88';
+};
+
+function tickClock(){
+  const el = document.getElementById('clockTime');
+  if(el) el.textContent = new Date().toLocaleString('th-TH',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+}
+setInterval(tickClock,1000); tickClock();
+
+function renderSystemBadge(){
+  const active = ALERTS.filter(a=>!a.up);
+  const badge = document.getElementById('systemBadge');
+  const text = document.getElementById('systemBadgeText');
+  if(!badge || !text) return;
+  
+  if(active.length>0){
+    badge.classList.remove('ok');
+    text.textContent = `${active.length} ปัญหากำลังเกิดขึ้น`;
+  }else{
+    badge.classList.add('ok');
+    text.textContent = 'ระบบปกติ';
+  }
+}
+
+function renderTicker(){
+  const active = ALERTS.filter(a=>!a.up);
+  const el = document.getElementById('tickerContent');
+  if(!el) return;
+  
+  if(active.length===0){
+    el.innerHTML = '<span>ทุกระบบสถานะปกติ — ไม่มีเหตุการณ์ DOWN ที่ Active ขณะนี้</span>';
+    return;
+  }
+  el.innerHTML = active.map(a=>{
+    const durm = calcDurationMin(a);
+    const siteStr = a.type === 'LINK' ? `${a.link_from} → ${a.link_to}` : `${a.site}${a.closure?` (${a.closure})`:''}`;
+    const isPon = String(a.type).toUpperCase()==='PON';
+    const labelStyle = isPon ? ' style="color:var(--pon-yellow)"' : '';
+    return `<span><b${labelStyle}>${typeLabel(a.type)} DOWN</b> · ${siteStr} · นาน ${fmtDur(durm)}${a.customers?` · ลูกค้า ${a.customers} ราย`:''}</span>`;
+  }).join('');
+}
+
+let map, markers=[], tileLayer;
+
+function initMap(){
+  const mapEl = document.getElementById('map');
+  if(!mapEl || map) return; 
+  
+  map = L.map('map', {zoomControl:true, attributionControl:false});
+  map.setView(KAN_CENTER, 9); 
+  map.fitBounds(KAN_BOUNDS);   
+  map.setMaxBounds(L.latLngBounds(KAN_BOUNDS).pad(0.5));
+  
+  loadTileProvider(0); 
+  renderMapMarkers();
+}
+
+function loadTileProvider(idx){
+  if(idx >= TILE_PROVIDERS.length) return;
+  const provider = TILE_PROVIDERS[idx];
+  let failedTiles = 0;
+  
+  const layer = L.tileLayer(provider.url, provider.options);
+  layer.on('tileerror', () => {
+    failedTiles++;
+    if(failedTiles >= 8){
+      console.warn(`Tile provider ${idx} failed, switching to backup...`);
+      map.removeLayer(layer);
+      loadTileProvider(idx + 1); 
+    }
+  });
+  
+  layer.addTo(map);
+  if(tileLayer) map.removeLayer(tileLayer); 
+  tileLayer = layer;
+}
+
+function renderMapMarkers(){
+  if(!map) return;
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
+  
+  const activeDownCoords = ALERTS.filter(a=>!a.up && a.lat && a.lng);
+  const grouped = {};
+  activeDownCoords.forEach(a=>{
+    const key = `${a.lat.toFixed(5)},${a.lng.toFixed(5)}`;
+    if(!grouped[key]) grouped[key] = [];
+    grouped[key].push(a);
+  });
+  
+  Object.entries(grouped).forEach(([coordStr, alerts])=>{
+    const [lat,lng] = coordStr.split(',').map(Number);
+    const a0 = alerts[0];
+    
+    const isPonGroup = alerts.some(a=>String(a.type).toUpperCase()==='PON');
+    const markerClass = isPonGroup ? 'pulse-marker pon-marker' : 'pulse-marker';
+    const icon = L.divIcon({
+      className:'',
+      html:`<div class="${markerClass}"><div class="ring"></div><div class="dot"></div></div>`,
+      iconSize:[18,18],
+      iconAnchor:[9,9]
+    });
+    
+    const marker = L.marker([lat, lng], {icon}).addTo(map);
+    
+    const alertsHtml = alerts.map(a=>{
+      const durm = calcDurationMin(a);
+      const siteDesc = a.type === 'LINK' ? `${a.link_from} <br>&rarr; ${a.link_to}` : `${a.site}${a.closure?` (พอร์ต ${a.closure})`:''}`;
+      const metrics = a.type === 'PON' ? `<br>Tx/Loss: ${a.tx_power||'—'}/${a.loss||'—'}` : '';
+      return `<div class="popup-alert-line">
+        <b style="color:${typeColor(a.type)}">${typeLabel(a.type)}</b>: ${siteDesc}
+        <br>เริ่ม: ${fmtDT(a.down)} (นาน ${fmtDur(durm)})
+        <br>ลูกค้า: <span>${a.customers || '—'}</span> ราย · SLA: <span>${a.sla || '—'}</span>${metrics}
+      </div>`;
+    }).join('');
+    
+    marker.bindPopup(`<div class="popup-body">
+      <div class="popup-title">ไซต์: ${a0.site}</div>
+      <div class="popup-row">อำเภอ/พื้นที่: <span>${a0.district || 'กาญจนบุรี'}</span></div>
+      ${alertsHtml}
+    </div>`, {maxWidth: 260});
+    
+    markers.push(marker);
+  });
+}
+
+
+function renderKPI(filteredHistory){
+  const stackEl = document.getElementById('kpiStack');
+  if(!stackEl) return;
+  
+  const active = ALERTS.filter(a=>!a.up);
+  const custImpact = active.reduce((s,a)=>s+(Number(a.customers)||0),0);
+  const resolvedInPeriod = filteredHistory.filter(a=>a.up);
+  
+  let totalResolvedMins = 0;
+  let resolvedCount = 0;
+  resolvedInPeriod.forEach(a=>{
+    const d = calcDurationMin(a);
+    if(d!=null){ totalResolvedMins += d; resolvedCount++; }
+  });
+  const avgMttr = resolvedCount > 0 ? Math.round(totalResolvedMins/resolvedCount) : null;
+  const slaBreached = filteredHistory.filter(a=> a.sla != null && a.sla !== '' && Number(a.sla) > 0).length;
+
+  const items = [
+    {label:'Active DOWN ขณะนี้', value:active.length, cls:'red', sub:`${custImpact} ลูกค้าได้รับผลกระทบ`},
+    {label:'เหตุการณ์ในช่วงประวัติ', value:filteredHistory.length, cls:'teal', sub:`${resolvedInPeriod.length} รายการกู้คืนแล้ว`},
+    {label:'MTTR เฉลี่ยในช่วงประวัติ', value: avgMttr!=null ? fmtDur(avgMttr) : '—', cls:'amber', sub:`คำนวณจาก ${resolvedCount} รายการ`},
+    {label:'SLA Breached ช่วงประวัติ', value: slaBreached, cls:'red', sub:'รายการที่มีค่า SLA (ปัญหาค้าง)'},
+  ];
+  
+  stackEl.innerHTML = items.map(k=>`
+    <div class="kpi"><div class="label">${k.label}</div>
+      <div class="value ${k.cls} mono">${k.value}</div>
+      <div class="sub">${k.sub}</div></div>`).join('');
+}
+
+function renderActiveTable(){
+  const active = ALERTS.filter(a=>!a.up).sort((a,b)=>new Date(a.down)-new Date(b.down));
+  const tbody = document.getElementById('activeTbody');
+  document.getElementById('activeCount').textContent = `${active.length} รายการ`;
+  if(!tbody) return;
+  
+  if(active.length===0){
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">สถานะปกติ — ไม่มีปัญหาค้าง</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = active.map(a=>{
+    const durm = calcDurationMin(a);
+    
+    let siteDesc = `<span class="site-cell">${a.site}`;
+    if(a.type==='LINK'){
+      siteDesc += `<span class="closure">${a.link_from} → ${a.link_to}</span>`;
+    } else if(a.type==='PON') {
+      siteDesc += `<span class="closure">พอร์ต: ${a.closure||'—'}</span>`;
+    }
+    if(a.ip) siteDesc += `<span class="ip">${a.ip}</span>`;
+    siteDesc += `</span>`;
+    
+    let metrics = '—';
+    if(a.type==='PON'){ metrics = `${a.tx_power||'—'} / ${a.loss||'—'} dB`; }
+    else if(a.dying_gasp==='1'){ metrics = '<b>Dying Gasp</b>'; }
+
+    return `<tr>
+      <td><span class="badge down"><span class="dot"></span>DOWN</span></td>
+      <td><span class="type-tag" style="color:${typeColor(a.type)};border-color:${typeColor(a.type)}66">${typeLabel(a.type)}</span></td>
+      <td>${siteDesc}</td>
+      <td class="mono">${fmtDT(a.down)}</td>
+      <td class="mono">${fmtDur(durm)}</td>
+      <td>${a.customers ?? '—'}</td>
+      <td>${a.sla ?? '—'}</td>
+      <td style="color:var(--text-muted);font-size:11.5px;">${metrics}</td>
+    </tr>`;
+  }).join('');
+}
+
+const RANGE_LABEL_TEXT = {
+  today: 'วันนี้',
+  '7d': '7 วันที่ผ่านมา',
+  '30d': '30 วันที่ผ่านมา'
+};
+
+function renderReliability(){
+  // ใช้ช่วงเวลาเดียวกับตัวกรองประวัติ (วันนี้ / 7 วัน / 30 วัน / กำหนดเอง) แทนการตรึงไว้ที่ 24 ชม. ล่าสุด
+  const [startBounds, endBounds] = getRangeBounds();
+  const windowStart = startBounds.getTime();
+  const windowEnd = endBounds.getTime();
+  const windowMs = windowEnd - windowStart;
+
+  // อัปเดตหัวข้อ/คำอธิบายตามช่วงที่เลือกอยู่
+  const titleEl = document.getElementById('reliabilityTitle');
+  const subEl = document.getElementById('reliabilitySub');
+  let rangeText;
+  if(currentRange.mode === 'custom' && currentRange.from && currentRange.to){
+    rangeText = `${startBounds.toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'})} – ${endBounds.toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'})}`;
+  } else {
+    rangeText = RANGE_LABEL_TEXT[currentRange.mode] || '7 วันที่ผ่านมา';
+  }
+  if(titleEl) titleEl.textContent = `Site Reliability — ${rangeText}`;
+  if(subEl) subEl.textContent = `ไทม์ไลน์เหตุการณ์ Down ต่อไซต์ในช่วง ${rangeText} — แต่ละแถบสีแดง = 1 รอบไฟดับ (ชี้ที่แถบเพื่อดูรายละเอียด)`;
+
+  // แกนเวลา: ถ้าช่วงยาวกว่า ~2 วัน ให้แสดงเป็นวันที่ ไม่งั้นแสดงเป็นเวลา ชม:นาที
+  const spansMultipleDays = windowMs > 2*24*3600*1000;
+  const labels = [];
+  for(let i=0;i<=4;i++){
+    const t = new Date(windowStart + i*windowMs/4);
+    labels.push(spansMultipleDays
+      ? t.toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit'})
+      : t.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',hour12:false}));
+  }
+  const labelsHtml = labels.map(l=>`<span>${l}</span>`).join('');
+  const lblNode = document.getElementById('relTimeLabelsNode');
+  const lblPon = document.getElementById('relTimeLabelsPon');
+  if(lblNode) lblNode.innerHTML = labelsHtml;
+  if(lblPon) lblPon.innerHTML = labelsHtml;
+
+  function buildGroup(typeFilter, containerId){
+    const body = document.getElementById(containerId);
+    if(!body) return;
+
+    const sitesMap = {};
+    ALERTS.forEach(a=>{
+      if(String(a.type).toUpperCase() !== typeFilter) return;
+      const downT = new Date(a.down).getTime();
+      if(isNaN(downT)) return;
+      const ongoing = !a.up;
+      const upT = a.up ? new Date(a.up).getTime() : windowEnd;
+      if(upT < windowStart || downT > windowEnd) return; // ไม่ทับช่วงที่เลือก
+      if(!sitesMap[a.site]) sitesMap[a.site] = [];
+      sitesMap[a.site].push({down:downT, up:upT, ongoing});
+    });
+
+    const rows = Object.entries(sitesMap).map(([site,segs])=>{
+      let totalMs = 0;
+      segs.forEach(s=>{
+        const st = Math.max(s.down, windowStart);
+        const en = Math.min(s.up, windowEnd);
+        if(en>st) totalMs += (en-st);
+      });
+      const availability = Math.max(0, Math.min(100, (1 - totalMs/windowMs)*100));
+      return {site, segs, count: segs.length, totalMs, availability};
+    }).sort((a,b)=> a.availability - b.availability); // แย่สุดขึ้นก่อน
+
+    if(rows.length===0){
+      body.innerHTML = `<div class="rel-empty">ไม่มีเหตุการณ์ ${typeFilter} ในช่วง ${rangeText}</div>`;
+      return;
+    }
+
+    body.innerHTML = rows.map(r=>{
+      const segsHtml = r.segs.map(s=>{
+        const st = Math.max(s.down, windowStart);
+        const en = Math.min(s.up, windowEnd);
+        if(en<=st) return '';
+        const leftPct = (st-windowStart)/windowMs*100;
+        const widthPct = Math.max((en-st)/windowMs*100, 0.4);
+        const durMin = ((s.ongoing ? windowEnd : s.up) - s.down) / 60000;
+        return `<div class="rel-seg" style="left:${leftPct}%;width:${widthPct}%"
+          data-site="${r.site.replace(/"/g,'&quot;')}"
+          data-down="${new Date(s.down).toISOString()}"
+          data-up="${s.ongoing ? '' : new Date(s.up).toISOString()}"
+          data-dur="${fmtDur(durMin)}"
+          data-ongoing="${s.ongoing ? '1' : '0'}"></div>`;
+      }).join('');
+      const avail = r.availability;
+      const availCls = avail>=99.5 ? '' : (avail<95 ? 'bad' : 'warn');
+      return `<div class="rel-row">
+        <div class="rel-site" title="${r.site}">${r.site}</div>
+        <div class="rel-track">${segsHtml}</div>
+        <div class="rel-count">${r.count}</div>
+        <div class="rel-total">${fmtDur(r.totalMs/60000)}</div>
+        <div class="rel-avail ${availCls}">${avail.toFixed(2)}%</div>
+      </div>`;
+    }).join('');
+  }
+
+  buildGroup('NODE','relBodyNode');
+  buildGroup('PON','relBodyPon');
+}
+
+/* ---------- downtime segment hover tooltip ---------- */
+(function initRelTooltip(){
+  const tip = document.getElementById('relTooltip');
+  if(!tip) return;
+
+  function showTip(seg, evt){
+    const site = seg.dataset.site || '';
+    const down = seg.dataset.down;
+    const up = seg.dataset.up;
+    const dur = seg.dataset.dur;
+    const ongoing = seg.dataset.ongoing === '1';
+    tip.innerHTML = `
+      <div class="tt-title">${site}</div>
+      <div class="tt-row"><span>DOWN เมื่อ</span><b>${fmtDT(down)}</b></div>
+      <div class="tt-row"><span>UP เมื่อ</span><b class="${ongoing?'ongoing':''}">${ongoing ? 'ยังไม่กลับคืน' : fmtDT(up)}</b></div>
+      <div class="tt-row"><span>ระยะเวลา</span><b>${dur}${ongoing?' (นับถึงปัจจุบัน)':''}</b></div>
+    `;
+    tip.classList.add('show');
+    positionTip(evt);
+  }
+  function positionTip(evt){
+    const pad = 14;
+    let x = evt.clientX + pad;
+    let y = evt.clientY + pad;
+    const rect = tip.getBoundingClientRect();
+    if(x + rect.width > window.innerWidth - 8) x = evt.clientX - rect.width - pad;
+    if(y + rect.height > window.innerHeight - 8) y = evt.clientY - rect.height - pad;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+  function hideTip(){
+    tip.classList.remove('show');
+  }
+
+  document.addEventListener('mouseover', (e)=>{
+    const seg = e.target.closest('.rel-seg');
+    if(seg) showTip(seg, e);
+  });
+  document.addEventListener('mousemove', (e)=>{
+    const seg = e.target.closest('.rel-seg');
+    if(seg && tip.classList.contains('show')) positionTip(e);
+  });
+  document.addEventListener('mouseout', (e)=>{
+    const seg = e.target.closest('.rel-seg');
+    if(seg) hideTip();
+  });
+})();
+
+let historyFilterText = '';
+let currentRange = {mode:'7d'}; 
+
+function getRangeBounds(){
+  const endBounds = new Date(NOW); 
+  let startBounds;
+  
+  if(currentRange.mode==='today'){
+    startBounds = new Date(NOW); startBounds.setHours(0,0,0,0);
+  } else if(currentRange.mode==='7d') {
+    startBounds = new Date(NOW - 7*86400000);
+  } else if(currentRange.mode==='30d') {
+    startBounds = new Date(NOW - 30*86400000);
+  } else if(currentRange.mode==='custom' && currentRange.from && currentRange.to) {
+    startBounds = new Date(currentRange.from);
+    startBounds.setHours(0,0,0,0);
+    const custEnd = new Date(currentRange.to); custEnd.setHours(23,59,59,999);
+    return [startBounds, custEnd];
+  } else {
+    startBounds = new Date(NOW - 7*86400000);
+  }
+  return [startBounds, endBounds];
+}
+
+function getFilteredHistoryData(){
+  const [start,end] = getRangeBounds();
+  return ALERTS.filter(a=>{
+    const d=new Date(a.down);
+    return !isNaN(d) && d>=start && d<=end;
+  });
+}
+
+function renderHistoryTable(filteredHistory){
+  const tbody = document.getElementById('historyTbody');
+  if(!tbody) return;
+  
+  let rows = [...filteredHistory].sort((a,b)=>new Date(b.down)-new Date(a.down));
+  
+  if(historyFilterText){
+    const q = historyFilterText.toLowerCase();
+    rows = rows.filter(a=>
+      String(a.site).toLowerCase().includes(q) ||
+      String(a.type).toLowerCase().includes(q) ||
+      String(a.ip).toLowerCase().includes(q) ||
+      String(a.closure).toLowerCase().includes(q)
+    );
+  }
+  
+  if(rows.length===0){
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">ไม่พบประวัติในช่วงเวลา/คำค้นหานี้</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = rows.map(a=>{
+    const isUp = !!a.up;
+    const durm = calcDurationMin(a);
+    const siteDesc = a.type === 'LINK' ? `${a.link_from} → ${a.link_to}` : `${a.site}${a.closure?` (${a.closure})`:''}`;
+    
+    return `<tr>
+      <td>${isUp ? '<span class="badge up"><span class="dot"></span>UP</span>' : '<span class="badge down"><span class="dot"></span>DOWN</span>'}</td>
+      <td><span class="type-tag" style="color:${typeColor(a.type)};border-color:${typeColor(a.type)}66">${typeLabel(a.type)}</span></td>
+      <td class="site-cell">${siteDesc}</td>
+      <td class="mono">${fmtDT(a.down)}</td>
+      <td class="mono">${isUp ? fmtDT(a.up) : '—'}</td>
+      <td class="mono">${fmtDur(durm)}</td>
+      <td>${a.customers ?? '—'}</td>
+      <td style="color:var(--text-muted);font-size:11.5px;">${a.root_cause || (isUp?'—':'อยู่ระหว่างตรวจสอบ')}</td>
+    </tr>`;
+  }).join('');
+}
+
+let chartType, chartTop, chartTrend;
+const CHART_TEXT = '#6C8A88';
+Chart.defaults.color = CHART_TEXT;
+Chart.defaults.font.family = "'Inter','Noto Sans Thai',sans-serif";
+
+function renderCharts(filteredHistory){
+  const byType = {NODE:0,PON:0,LINK:0};
+  filteredHistory.forEach(a=>{
+    const t = String(a.type).toUpperCase();
+    if(byType[t]!==undefined) byType[t]++;
+  });
+  
+  const ctxType = document.getElementById('chartType');
+  if(ctxType){
+    if(chartType) chartType.destroy();
+    chartType = new Chart(ctxType, {
+      type:'doughnut',
+      data:{ labels:['NODE','PON','LINK'], datasets:[{ data:[byType.NODE,byType.PON,byType.LINK],
+        backgroundColor:['#F2A93B','#17B8A6','#8fb8ff'], borderColor:'#101E24', borderWidth:3 }]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:10,padding:8,font:{size:11}}}}, cutout:'62%' }
+    });
+  }
+
+  const bySite = {};
+  filteredHistory.forEach(a=>{ 
+    const d = calcDurationMin(a);
+    if(d > 0) bySite[a.site] = (bySite[a.site]||0) + d; 
+  });
+  const top6 = Object.entries(bySite).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  
+  const ctxTop = document.getElementById('chartTop');
+  if(ctxTop){
+    if(chartTop) chartTop.destroy();
+    chartTop = new Chart(ctxTop, {
+      type:'bar',
+      data:{ labels: top6.map(t=>t[0].length>12?t[0].slice(0,12)+'…':t[0]),
+        datasets:[{ data: top6.map(t=>Math.round(t[1])), backgroundColor:'#17B8A6', borderRadius:4 }]},
+      options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}},
+        scales:{ x:{grid:{color:'#1C2E33'}, ticks:{font:{size:9}}}, y:{grid:{display:false}, ticks:{font:{size:10}}} } }
+    });
+  }
+
+  const days = {};
+  filteredHistory.forEach(a=>{ 
+    if(a.down) {
+      const d = new Date(a.down).toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit'});
+      days[d] = (days[d]||0)+1; 
+    }
+  });
+  const dayKeys = Object.keys(days).reverse().slice(0,10).reverse(); // show last 10 days max
+  
+  const ctxTrend = document.getElementById('chartTrend');
+  if(ctxTrend){
+    if(chartTrend) chartTrend.destroy();
+    chartTrend = new Chart(ctxTrend, {
+      type:'line',
+      data:{ labels: dayKeys, datasets:[{ data: dayKeys.map(k=>days[k]), borderColor:'#17B8A6',
+        backgroundColor:'rgba(23,184,166,.15)', fill:true, tension:.35, pointRadius:3, pointBackgroundColor:'#17B8A6' }]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+        scales:{ x:{grid:{color:'#1C2E33'}, ticks:{font:{size:9}}}, y:{grid:{color:'#1C2E33'}, ticks:{precision:0,font:{size:9}}} } }
+    });
+  }
+}
+
+function applyFilters(){
+  const fh = getFilteredHistoryData();
+  renderKPI(fh);
+  renderCharts(fh);
+  renderHistoryTable(fh);
+  renderReliability();
+}
+
+document.querySelectorAll('.fbtn[data-range]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.fbtn[data-range]').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentRange = {mode: btn.dataset.range};
+    applyFilters();
+  });
+});
+
+document.getElementById('applyCustom').addEventListener('click', ()=>{
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  if(!from || !to) return;
+  document.querySelectorAll('.fbtn[data-range]').forEach(b=>b.classList.remove('active'));
+  currentRange = {mode:'custom', from, to};
+  applyFilters();
+});
+
+document.getElementById('historySearch').addEventListener('input', (e)=>{
+  historyFilterText = e.target.value;
+  renderHistoryTable(getFilteredHistoryData());
+});
+
+const SERVER_API_URL = "<?= apiUrl ?>";
+
+function apiUrl(){
+  return SERVER_API_URL + '?action=list';
+}
+
+
+function rowsToIncidents(rows){
+  const downs = rows.filter(r => String(r.status).toUpperCase() === 'DOWN');
+  return downs.map(d => {
+    const upRow = d.paired_alert_id ? rows.find(r => r.alert_id === d.paired_alert_id) : null;
+    return {
+      id: d.alert_id, 
+      type: d.alarm_type, 
+      site: d.site_name,
+      vendor: d.vendor, 
+      model: d.model, 
+      ip: d.ip_address,
+      lat: d.lat ? Number(d.lat) : null, 
+      lng: d.lng ? Number(d.lng) : null,
+      district: d.province || 'กาญจนบุรี',
+      down: d.event_time, 
+      up: upRow ? upRow.event_time : null,
+      customers: d.customers_affected !== '' ? Number(d.customers_affected) : null,
+      sla: d.sla !== '' ? Number(d.sla) : null,
+      link_from: d.link_from, 
+      link_to: d.link_to,
+      closure: d.closure_port,
+      tx_power: d.tx_power, 
+      loss: d.loss, 
+      dying_gasp: d.dying_gasp,
+      root_cause: (upRow && upRow.root_cause) || d.root_cause || ''
+    };
+  });
+}
+
+
+async function loadLiveData(){
+  try{
+    const res = await fetch(apiUrl());
+    if(!res.ok) throw new Error('API Response Error');
+    const json = await res.json();
+    if(json.ok && Array.isArray(json.data)){
+      ALERTS = rowsToIncidents(json.data);
+      return true;
+    }
+    return false;
+  }catch(err){
+    console.error('Cannot load live data from script:', err);
+    return false;
+  }
+}
+
+async function init(){
+  await loadLiveData();
+  
+  const overlay = document.getElementById('loadingOverlay');
+  if(overlay) overlay.classList.remove('active');
+  
+  renderSystemBadge();
+  renderTicker();
+  initMap();
+  renderActiveTable();
+  applyFilters();
+  
+  // Auto refresh ทุกๆ 30 วินาที
+  setInterval(async ()=>{
+    NOW = new Date();
+    await loadLiveData();
+    renderSystemBadge();
+    renderTicker();
+    renderActiveTable();
+    renderMapMarkers();
+    applyFilters();
+  }, 30000);
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
