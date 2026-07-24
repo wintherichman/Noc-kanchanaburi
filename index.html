@@ -9,7 +9,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -217,18 +216,17 @@
   .rel-empty{padding:16px 0;text-align:center;color:var(--text-muted);font-size:12px;}
   @media(max-width:700px){ .rel-site{width:100px;} .rel-total{width:74px;} }
 
-  /* ---------- printable report (used only for PDF export) ---------- */
-  #pdfCaptureOverlay{position:fixed;inset:0;z-index:100000;background:#ffffff;overflow:auto;
-    display:none;}
-  #pdfCaptureOverlay.active{display:block;}
-  #pdfGeneratingNotice{position:fixed;top:14px;right:14px;z-index:100001;background:#0B1418;color:#fff;
-    padding:8px 16px;border-radius:8px;font-size:12.5px;font-family:'Inter',sans-serif;display:none;
-    align-items:center;gap:8px;box-shadow:0 6px 18px rgba(0,0,0,.3);}
-  #pdfGeneratingNotice.active{display:flex;}
-  #pdfGeneratingNotice .spin{width:12px;height:12px;border:2px solid rgba(255,255,255,.3);
-    border-top-color:#17B8A6;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;}
-  #printReportArea{width:1000px;max-width:1000px;margin:0 auto;background:#ffffff;color:#1a2b2e;
-    font-family:'Inter','Noto Sans Thai',sans-serif;padding:32px;}
+  /* ---------- printable report (rendered via native browser print, not html2canvas —
+     html2canvas cannot shape Thai combining vowels/tone marks correctly; window.print() can) ---------- */
+  #printReportArea{display:none;}
+  @media print{
+    @page{ size:A4; margin:12mm; }
+    body.printing-report > *:not(#printReportArea){ display:none !important; }
+    body.printing-report{ background:#fff !important; }
+    #printReportArea{ display:block !important; }
+  }
+  #printReportArea{width:100%;max-width:186mm;margin:0 auto;background:#ffffff;color:#1a2b2e;
+    font-family:'Inter','Noto Sans Thai',sans-serif;}
   #printReportArea *{box-sizing:border-box;}
   #printReportArea h1{font-family:'Space Grotesk','Noto Sans Thai',sans-serif;font-size:20px;margin:0 0 2px;color:#0B1418;}
   #printReportArea .pr-sub{font-size:11.5px;color:#6b7d80;margin-bottom:18px;}
@@ -248,6 +246,12 @@
   #printReportArea .pr-badge.up{background:#dcf5f1;color:#0d6e63;}
   #printReportArea .pr-footer{margin-top:20px;font-size:9.5px;color:#9aa9ab;text-align:right;}
   #printReportArea .pr-empty{padding:14px;text-align:center;color:#9aa9ab;font-size:11px;}
+  @media print{
+    #printReportArea .pr-section-title{ break-after:avoid; page-break-after:avoid; }
+    #printReportArea tr{ break-inside:avoid; page-break-inside:avoid; }
+    #printReportArea thead{ display:table-header-group; }
+    #printReportArea .pr-kpi-row{ break-inside:avoid; page-break-inside:avoid; }
+  }
 
   .export-btn .spin-icon{animation:spin .8s linear infinite;}
 
@@ -326,7 +330,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13l2.5 5L13 13M13 13l2.5 5L18 13"/></svg>
         Excel
       </button>
-      <button class="export-btn pdf" id="exportPdfBtn" title="ส่งออกรายงานเป็น PDF">
+      <button class="export-btn pdf" id="exportPdfBtn" title="เปิดหน้าต่างพิมพ์ — เลือก 'บันทึกเป็น PDF' เพื่อดาวน์โหลด">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15h1.5a1.5 1.5 0 0 0 0-3H9v6M13 12v6h1a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-1zM19.5 12H18v6"/><path d="M18 15h1.3"/></svg>
         PDF
       </button>
@@ -407,8 +411,7 @@
 
 </div>
 
-<div id="pdfCaptureOverlay"><div id="printReportArea"></div></div>
-<div id="pdfGeneratingNotice"><span class="spin"></span><span>กำลังสร้างไฟล์ PDF...</span></div>
+<div id="printReportArea"></div>
 
 <script>
 let ALERTS = []; 
@@ -1040,7 +1043,7 @@ async function init(){
 }
 
 /* =========================================================
-   EXPORT: EXCEL (SheetJS) & PDF (html2pdf)
+   EXPORT: EXCEL (SheetJS) & PDF (native browser print)
    ========================================================= */
 
 function currentRangeText(){
@@ -1234,62 +1237,32 @@ function buildPrintReportHTML(){
 }
 
 function exportPDF(){
-  const btn = document.getElementById('exportPdfBtn');
-  const originalHtml = btn.innerHTML;
-  const overlay = document.getElementById('pdfCaptureOverlay');
-  const notice = document.getElementById('pdfGeneratingNotice');
-  btn.setAttribute('disabled','disabled');
-  btn.innerHTML = 'กำลังสร้างไฟล์...';
+  const container = document.getElementById('printReportArea');
+  container.innerHTML = buildPrintReportHTML();
 
   function cleanup(){
-    overlay.classList.remove('active');
-    notice.classList.remove('active');
-    btn.removeAttribute('disabled');
-    btn.innerHTML = originalHtml;
+    document.body.classList.remove('printing-report');
+    window.removeEventListener('afterprint', cleanup);
+    if(printMql) printMql.removeEventListener('change', mqlHandler);
+  }
+  function mqlHandler(e){ if(!e.matches) cleanup(); }
+
+  // ใช้การพิมพ์ของเบราว์เซอร์เอง (แทน html2canvas) เพราะ html2canvas วาดตัวอักษรไทยแบบ
+  // rasterize ทีละตัว ทำให้สระ/วรรณยุกต์เพี้ยนตำแหน่ง ส่วนเบราว์เซอร์เรนเดอร์ข้อความไทยถูกต้องเสมอ
+  document.body.classList.add('printing-report');
+  window.addEventListener('afterprint', cleanup);
+  let printMql = null;
+  if(window.matchMedia){
+    printMql = window.matchMedia('print');
+    printMql.addEventListener('change', mqlHandler);
   }
 
-  try{
-    const container = document.getElementById('printReportArea');
-    container.innerHTML = buildPrintReportHTML();
-
-    // แสดง container จริงบนหน้าจอ (คลุมด้วย overlay ทึบ) เพื่อให้ html2canvas จับภาพได้ถูกต้อง
-    // เนื่องจากการวาง element ไว้นอกจอมักทำให้ html2canvas จับภาพว่างเปล่า
-    overlay.classList.add('active');
-    notice.classList.add('active');
-    overlay.scrollTop = 0;
-
-    const fname = `NOC_Kanchanaburi_Report_${new Date().toISOString().slice(0,10)}.pdf`;
-    const opt = {
-      margin: [10,10,10,10],
-      filename: fname,
-      image: { type:'jpeg', quality:0.98 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        logging: false
-      },
-      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' },
-      pagebreak: { mode:['css','legacy'] }
-    };
-
-    // รอ 2 เฟรมให้เบราว์เซอร์วาด layout/ฟอนต์ของรายงานให้เสร็จก่อนจับภาพ
+  // รอให้เบราว์เซอร์วาด layout ของรายงานให้เสร็จก่อนเปิดกล่องพิมพ์
+  requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
-      requestAnimationFrame(()=>{
-        setTimeout(()=>{
-          html2pdf().set(opt).from(container).save().catch(err=>{
-            console.error('html2pdf generation error:', err);
-            alert('ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง');
-          }).finally(cleanup);
-        }, 150);
-      });
+      window.print();
     });
-  }catch(err){
-    console.error('Export PDF failed:', err);
-    alert('ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง');
-    cleanup();
-  }
+  });
 }
 
 document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
