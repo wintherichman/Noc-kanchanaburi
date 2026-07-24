@@ -218,7 +218,7 @@
   @media(max-width:700px){ .rel-site{width:100px;} .rel-total{width:74px;} }
 
   /* ---------- printable report (used only for PDF export, off-screen) ---------- */
-  #printReportArea{position:fixed;left:-99999px;top:0;width:1000px;background:#ffffff;color:#1a2b2e;
+  #printReportArea{position:absolute;left:-9999px;top:0;width:1000px;background:#ffffff;color:#1a2b2e;
     font-family:'Inter','Noto Sans Thai',sans-serif;padding:32px;}
   #printReportArea *{box-sizing:border-box;}
   #printReportArea h1{font-family:'Space Grotesk','Noto Sans Thai',sans-serif;font-size:20px;margin:0 0 2px;color:#0B1418;}
@@ -1232,20 +1232,42 @@ function exportPDF(){
   try{
     const container = document.getElementById('printReportArea');
     container.innerHTML = buildPrintReportHTML();
+    // ให้เบราว์เซอร์คำนวณ layout ของ container ก่อนจับภาพ (สำคัญเมื่อ container วางไว้นอกจอ)
+    const reportHeight = container.scrollHeight;
 
     const fname = `NOC_Kanchanaburi_Report_${new Date().toISOString().slice(0,10)}.pdf`;
     const opt = {
       margin: [10,10,10,10],
       filename: fname,
       image: { type:'jpeg', quality:0.98 },
-      html2canvas: { scale:2, useCORS:true, backgroundColor:'#ffffff' },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        width: 1000,
+        height: reportHeight,
+        windowWidth: 1000,
+        windowHeight: reportHeight,
+        scrollX: 0,
+        scrollY: 0,
+        x: 0,
+        y: 0
+      },
       jsPDF: { unit:'mm', format:'a4', orientation:'portrait' },
       pagebreak: { mode:['css','legacy'] }
     };
 
-    html2pdf().set(opt).from(container).save().finally(()=>{
-      btn.removeAttribute('disabled');
-      btn.innerHTML = originalHtml;
+    // รอ 1 เฟรมให้ DOM/ฟอนต์เรนเดอร์เสร็จก่อนแปลงเป็น PDF
+    requestAnimationFrame(()=>{
+      setTimeout(()=>{
+        html2pdf().set(opt).from(container).save().catch(err=>{
+          console.error('html2pdf generation error:', err);
+          alert('ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง');
+        }).finally(()=>{
+          btn.removeAttribute('disabled');
+          btn.innerHTML = originalHtml;
+        });
+      }, 50);
     });
   }catch(err){
     console.error('Export PDF failed:', err);
