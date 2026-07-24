@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -135,6 +137,17 @@
     padding:6px 8px;border-radius:6px;font-family:'JetBrains Mono';font-size:12px;width:130px;}
   .date-inputs span{color:var(--text-muted);font-size:12px;}
 
+  /* ---------- export bar ---------- */
+  .export-bar{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap;}
+  .export-btn{display:inline-flex;align-items:center;gap:7px;background:var(--bg-panel-alt);
+    border:1px solid var(--grid-line);color:var(--text-primary);padding:7px 14px;border-radius:7px;
+    font-size:12.5px;cursor:pointer;font-family:inherit;font-weight:600;transition:.15s;}
+  .export-btn:hover{border-color:var(--fiber-teal);color:var(--fiber-teal);}
+  .export-btn svg{width:14px;height:14px;flex-shrink:0;}
+  .export-btn.excel:hover{border-color:#1D8348;color:#2ecc71;}
+  .export-btn.pdf:hover{border-color:var(--alarm-red);color:var(--alarm-red);}
+  .export-btn[disabled]{opacity:.5;cursor:wait;}
+
   /* ---------- charts row ---------- */
   .grid-charts{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:16px;margin-bottom:16px;}
   @media(max-width:980px){.grid-charts{grid-template-columns:1fr;}}
@@ -203,6 +216,31 @@
   .rel-avail.warn{color:var(--signal-amber);}
   .rel-empty{padding:16px 0;text-align:center;color:var(--text-muted);font-size:12px;}
   @media(max-width:700px){ .rel-site{width:100px;} .rel-total{width:74px;} }
+
+  /* ---------- printable report (used only for PDF export, off-screen) ---------- */
+  #printReportArea{position:fixed;left:-99999px;top:0;width:1000px;background:#ffffff;color:#1a2b2e;
+    font-family:'Inter','Noto Sans Thai',sans-serif;padding:32px;}
+  #printReportArea *{box-sizing:border-box;}
+  #printReportArea h1{font-family:'Space Grotesk','Noto Sans Thai',sans-serif;font-size:20px;margin:0 0 2px;color:#0B1418;}
+  #printReportArea .pr-sub{font-size:11.5px;color:#6b7d80;margin-bottom:18px;}
+  #printReportArea .pr-section-title{font-size:12px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;
+    color:#0d6e63;border-bottom:2px solid #17B8A6;padding-bottom:5px;margin:22px 0 10px;}
+  #printReportArea .pr-kpi-row{display:flex;gap:12px;margin-bottom:6px;}
+  #printReportArea .pr-kpi{flex:1;border:1px solid #dfe7e8;border-radius:8px;padding:10px 12px;}
+  #printReportArea .pr-kpi .l{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#7c8e91;font-weight:700;}
+  #printReportArea .pr-kpi .v{font-family:'Space Grotesk';font-size:19px;font-weight:700;color:#0B1418;margin-top:2px;}
+  #printReportArea table{width:100%;border-collapse:collapse;font-size:10.5px;}
+  #printReportArea th{background:#eef5f4;color:#516668;text-align:left;padding:6px 8px;
+    border-bottom:1px solid #d7e2e2;font-size:9.5px;text-transform:uppercase;letter-spacing:.03em;}
+  #printReportArea td{padding:6px 8px;border-bottom:1px solid #edf2f2;}
+  #printReportArea tr:nth-child(even) td{background:#fafcfc;}
+  #printReportArea .pr-badge{display:inline-block;padding:2px 7px;border-radius:999px;font-size:9px;font-weight:700;}
+  #printReportArea .pr-badge.down{background:#ffe5e5;color:#c0392b;}
+  #printReportArea .pr-badge.up{background:#dcf5f1;color:#0d6e63;}
+  #printReportArea .pr-footer{margin-top:20px;font-size:9.5px;color:#9aa9ab;text-align:right;}
+  #printReportArea .pr-empty{padding:14px;text-align:center;color:#9aa9ab;font-size:11px;}
+
+  .export-btn .spin-icon{animation:spin .8s linear infinite;}
 
   .loading-overlay{position:fixed;inset:0;background:rgba(11,20,24,.85);z-index:9999;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -273,6 +311,16 @@
     <div class="date-inputs">
       <input type="date" id="dateFrom"><span>ถึง</span><input type="date" id="dateTo">
       <button class="fbtn custom-apply" id="applyCustom">Apply</button>
+    </div>
+    <div class="export-bar">
+      <button class="export-btn excel" id="exportExcelBtn" title="ส่งออกรายงานเป็น Excel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13l2.5 5L13 13M13 13l2.5 5L18 13"/></svg>
+        Excel
+      </button>
+      <button class="export-btn pdf" id="exportPdfBtn" title="ส่งออกรายงานเป็น PDF">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15h1.5a1.5 1.5 0 0 0 0-3H9v6M13 12v6h1a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-1zM19.5 12H18v6"/><path d="M18 15h1.3"/></svg>
+        PDF
+      </button>
     </div>
   </div>
 
@@ -349,6 +397,8 @@
   </div>
 
 </div>
+
+<div id="printReportArea"></div>
 
 <script>
 let ALERTS = []; 
@@ -978,6 +1028,235 @@ async function init(){
     applyFilters();
   }, 30000);
 }
+
+/* =========================================================
+   EXPORT: EXCEL (SheetJS) & PDF (html2pdf)
+   ========================================================= */
+
+function currentRangeText(){
+  const [start,end] = getRangeBounds();
+  if(currentRange.mode === 'custom' && currentRange.from && currentRange.to){
+    return `${start.toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'})} – ${end.toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'})}`;
+  }
+  return RANGE_LABEL_TEXT[currentRange.mode] || '7 วันที่ผ่านมา';
+}
+
+function siteAvailabilityRows(){
+  // สร้างข้อมูล availability ต่อไซต์ (NODE/PON) สำหรับช่วงเวลาที่เลือกอยู่ ใช้ตรรกะเดียวกับ renderReliability
+  const [startBounds, endBounds] = getRangeBounds();
+  const windowStart = startBounds.getTime();
+  const windowEnd = endBounds.getTime();
+  const windowMs = windowEnd - windowStart;
+  const out = [];
+
+  ['NODE','PON'].forEach(typeFilter=>{
+    const sitesMap = {};
+    ALERTS.forEach(a=>{
+      if(String(a.type).toUpperCase() !== typeFilter) return;
+      const downT = new Date(a.down).getTime();
+      if(isNaN(downT)) return;
+      const upT = a.up ? new Date(a.up).getTime() : windowEnd;
+      if(upT < windowStart || downT > windowEnd) return;
+      if(!sitesMap[a.site]) sitesMap[a.site] = [];
+      sitesMap[a.site].push({down:downT, up:upT});
+    });
+    Object.entries(sitesMap).forEach(([site,segs])=>{
+      let totalMs = 0;
+      segs.forEach(s=>{
+        const st = Math.max(s.down, windowStart);
+        const en = Math.min(s.up, windowEnd);
+        if(en>st) totalMs += (en-st);
+      });
+      const availability = Math.max(0, Math.min(100, (1 - totalMs/windowMs)*100));
+      out.push({ type: typeFilter, site, count: segs.length, downtimeMin: Math.round(totalMs/60000), availability: Number(availability.toFixed(2)) });
+    });
+  });
+  return out.sort((a,b)=> a.availability - b.availability);
+}
+
+/* ---------------- Excel export ---------------- */
+function exportExcel(){
+  const btn = document.getElementById('exportExcelBtn');
+  const originalHtml = btn.innerHTML;
+  btn.setAttribute('disabled','disabled');
+  btn.innerHTML = 'กำลังสร้างไฟล์...';
+
+  try{
+    const fh = getFilteredHistoryData();
+    const active = ALERTS.filter(a=>!a.up).sort((a,b)=>new Date(a.down)-new Date(b.down));
+    const history = [...fh].sort((a,b)=>new Date(b.down)-new Date(a.down));
+
+    const wb = XLSX.utils.book_new();
+
+    // --- Sheet 1: Summary ---
+    const custImpact = active.reduce((s,a)=>s+(Number(a.customers)||0),0);
+    const resolvedInPeriod = fh.filter(a=>a.up);
+    let totalResolvedMins = 0, resolvedCount = 0;
+    resolvedInPeriod.forEach(a=>{ const d = calcDurationMin(a); if(d!=null){ totalResolvedMins+=d; resolvedCount++; } });
+    const avgMttr = resolvedCount>0 ? Math.round(totalResolvedMins/resolvedCount) : null;
+    const slaBreached = fh.filter(a=> a.sla!=null && a.sla!=='' && Number(a.sla)>0).length;
+
+    const summaryData = [
+      ['NOC Kanchanaburi — Network Alarm Report'],
+      [`สร้างเมื่อ: ${fmtDT(new Date().toISOString())}`],
+      [`ช่วงเวลาประวัติ: ${currentRangeText()}`],
+      [],
+      ['ตัวชี้วัด', 'ค่า'],
+      ['Active DOWN ขณะนี้', active.length],
+      ['ลูกค้าได้รับผลกระทบ (Active)', custImpact],
+      ['เหตุการณ์ในช่วงที่เลือก', fh.length],
+      ['รายการกู้คืนแล้วในช่วงที่เลือก', resolvedInPeriod.length],
+      ['MTTR เฉลี่ย (นาที)', avgMttr ?? '—'],
+      ['SLA Breached ในช่วงที่เลือก', slaBreached],
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+    wsSummary['!cols'] = [{wch:32},{wch:20}];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'สรุปภาพรวม');
+
+    // --- Sheet 2: Active Alerts ---
+    const activeHeader = ['สถานะ','ประเภท','ไซต์','พอร์ต/ลิงก์','IP','เริ่ม DOWN','ระยะเวลาดาวน์ (นาที)','ลูกค้ากระทบ','SLA','Tx Power','Loss','Dying Gasp'];
+    const activeRows = active.map(a=>{
+      const durm = calcDurationMin(a);
+      const portOrLink = a.type==='LINK' ? `${a.link_from} → ${a.link_to}` : (a.closure||'');
+      return ['DOWN', typeLabel(a.type), a.site||'', portOrLink, a.ip||'', fmtDT(a.down),
+        durm!=null?Math.round(durm):'', a.customers??'', a.sla??'', a.tx_power||'', a.loss||'', a.dying_gasp==='1'?'ใช่':''];
+    });
+    const wsActive = XLSX.utils.aoa_to_sheet([activeHeader, ...activeRows]);
+    wsActive['!cols'] = activeHeader.map(()=>({wch:16}));
+    XLSX.utils.book_append_sheet(wb, wsActive, 'Active Alerts');
+
+    // --- Sheet 3: History ---
+    const histHeader = ['สถานะ','ประเภท','ไซต์','พอร์ต/ลิงก์','เริ่ม DOWN','กู้คืนเมื่อ','ระยะเวลา (นาที)','ลูกค้ากระทบ','SLA','สาเหตุ/รายละเอียด'];
+    const histRows = history.map(a=>{
+      const isUp = !!a.up;
+      const durm = calcDurationMin(a);
+      const portOrLink = a.type==='LINK' ? `${a.link_from} → ${a.link_to}` : (a.closure||'');
+      return [isUp?'UP':'DOWN', typeLabel(a.type), a.site||'', portOrLink, fmtDT(a.down), isUp?fmtDT(a.up):'',
+        durm!=null?Math.round(durm):'', a.customers??'', a.sla??'', a.root_cause || (isUp?'':'อยู่ระหว่างตรวจสอบ')];
+    });
+    const wsHist = XLSX.utils.aoa_to_sheet([histHeader, ...histRows]);
+    wsHist['!cols'] = histHeader.map(()=>({wch:18}));
+    XLSX.utils.book_append_sheet(wb, wsHist, 'ประวัติเหตุการณ์');
+
+    // --- Sheet 4: Site Reliability ---
+    const relHeader = ['กลุ่ม','ไซต์','จำนวนครั้งดับ','ดับรวม (นาที)','Availability (%)'];
+    const relRows = siteAvailabilityRows().map(r=>[r.type, r.site, r.count, r.downtimeMin, r.availability]);
+    const wsRel = XLSX.utils.aoa_to_sheet([relHeader, ...relRows]);
+    wsRel['!cols'] = relHeader.map(()=>({wch:18}));
+    XLSX.utils.book_append_sheet(wb, wsRel, 'Site Reliability');
+
+    const fname = `NOC_Kanchanaburi_Report_${new Date().toISOString().slice(0,10)}.xlsx`;
+    XLSX.writeFile(wb, fname);
+  }catch(err){
+    console.error('Export Excel failed:', err);
+    alert('ไม่สามารถสร้างไฟล์ Excel ได้ กรุณาลองใหม่อีกครั้ง');
+  }finally{
+    btn.removeAttribute('disabled');
+    btn.innerHTML = originalHtml;
+  }
+}
+
+/* ---------------- PDF export ---------------- */
+function buildPrintReportHTML(){
+  const fh = getFilteredHistoryData();
+  const active = ALERTS.filter(a=>!a.up).sort((a,b)=>new Date(a.down)-new Date(b.down));
+  const history = [...fh].sort((a,b)=>new Date(b.down)-new Date(a.down)).slice(0, 150); // จำกัดจำนวนแถวเพื่อขนาดไฟล์ที่เหมาะสม
+  const custImpact = active.reduce((s,a)=>s+(Number(a.customers)||0),0);
+  const resolvedInPeriod = fh.filter(a=>a.up);
+  let totalResolvedMins = 0, resolvedCount = 0;
+  resolvedInPeriod.forEach(a=>{ const d = calcDurationMin(a); if(d!=null){ totalResolvedMins+=d; resolvedCount++; } });
+  const avgMttr = resolvedCount>0 ? Math.round(totalResolvedMins/resolvedCount) : null;
+  const slaBreached = fh.filter(a=> a.sla!=null && a.sla!=='' && Number(a.sla)>0).length;
+
+  const activeRowsHtml = active.length===0
+    ? '<div class="pr-empty">สถานะปกติ — ไม่มีปัญหาค้าง</div>'
+    : `<table><thead><tr><th>ประเภท</th><th>ไซต์</th><th>พอร์ต/ลิงก์</th><th>เริ่ม DOWN</th><th>ระยะเวลา</th><th>ลูกค้ากระทบ</th><th>SLA</th></tr></thead><tbody>
+        ${active.map(a=>{
+          const durm = calcDurationMin(a);
+          const portOrLink = a.type==='LINK' ? `${a.link_from} → ${a.link_to}` : (a.closure||'—');
+          return `<tr><td><span class="pr-badge down">DOWN</span> ${typeLabel(a.type)}</td><td>${a.site||''}</td><td>${portOrLink}</td>
+            <td>${fmtDT(a.down)}</td><td>${fmtDur(durm)}</td><td>${a.customers??'—'}</td><td>${a.sla??'—'}</td></tr>`;
+        }).join('')}
+      </tbody></table>`;
+
+  const historyRowsHtml = history.length===0
+    ? '<div class="pr-empty">ไม่มีประวัติในช่วงเวลานี้</div>'
+    : `<table><thead><tr><th>สถานะ</th><th>ประเภท</th><th>ไซต์</th><th>เริ่ม DOWN</th><th>กู้คืนเมื่อ</th><th>ระยะเวลา</th><th>สาเหตุ</th></tr></thead><tbody>
+        ${history.map(a=>{
+          const isUp = !!a.up;
+          const durm = calcDurationMin(a);
+          const siteDesc = a.type === 'LINK' ? `${a.link_from} → ${a.link_to}` : `${a.site}${a.closure?` (${a.closure})`:''}`;
+          return `<tr><td><span class="pr-badge ${isUp?'up':'down'}">${isUp?'UP':'DOWN'}</span></td><td>${typeLabel(a.type)}</td><td>${siteDesc}</td>
+            <td>${fmtDT(a.down)}</td><td>${isUp?fmtDT(a.up):'—'}</td><td>${fmtDur(durm)}</td>
+            <td>${a.root_cause || (isUp?'—':'อยู่ระหว่างตรวจสอบ')}</td></tr>`;
+        }).join('')}
+      </tbody></table>${fh.length>150?`<div class="pr-footer">แสดง 150 รายการล่าสุดจากทั้งหมด ${fh.length} รายการ — ดูรายการทั้งหมดได้ในไฟล์ Excel</div>`:''}`;
+
+  const relRows = siteAvailabilityRows();
+  const relRowsHtml = relRows.length===0
+    ? '<div class="pr-empty">ไม่มีข้อมูล</div>'
+    : `<table><thead><tr><th>กลุ่ม</th><th>ไซต์</th><th>จำนวนครั้งดับ</th><th>ดับรวม</th><th>Availability</th></tr></thead><tbody>
+        ${relRows.map(r=>`<tr><td>${r.type}</td><td>${r.site}</td><td>${r.count}</td><td>${fmtDur(r.downtimeMin)}</td><td>${r.availability.toFixed(2)}%</td></tr>`).join('')}
+      </tbody></table>`;
+
+  return `
+    <h1>NOC Kanchanaburi — Network Alarm Report</h1>
+    <div class="pr-sub">สร้างเมื่อ ${fmtDT(new Date().toISOString())} · ช่วงเวลาประวัติ: ${currentRangeText()}</div>
+
+    <div class="pr-kpi-row">
+      <div class="pr-kpi"><div class="l">Active DOWN ขณะนี้</div><div class="v">${active.length}</div></div>
+      <div class="pr-kpi"><div class="l">เหตุการณ์ในช่วงที่เลือก</div><div class="v">${fh.length}</div></div>
+      <div class="pr-kpi"><div class="l">MTTR เฉลี่ย</div><div class="v">${avgMttr!=null?fmtDur(avgMttr):'—'}</div></div>
+      <div class="pr-kpi"><div class="l">SLA Breached</div><div class="v">${slaBreached}</div></div>
+    </div>
+
+    <div class="pr-section-title">Active Alerts — ปัญหาที่กำลังเกิดขึ้น (${active.length} รายการ · ลูกค้ากระทบรวม ${custImpact} ราย)</div>
+    ${activeRowsHtml}
+
+    <div class="pr-section-title">Site Reliability — ${currentRangeText()}</div>
+    ${relRowsHtml}
+
+    <div class="pr-section-title">ประวัติเหตุการณ์ — ${currentRangeText()} (${fh.length} รายการ)</div>
+    ${historyRowsHtml}
+
+    <div class="pr-footer">NOC Kanchanaburi — Network Alarm & Availability Dashboard</div>
+  `;
+}
+
+function exportPDF(){
+  const btn = document.getElementById('exportPdfBtn');
+  const originalHtml = btn.innerHTML;
+  btn.setAttribute('disabled','disabled');
+  btn.innerHTML = 'กำลังสร้างไฟล์...';
+
+  try{
+    const container = document.getElementById('printReportArea');
+    container.innerHTML = buildPrintReportHTML();
+
+    const fname = `NOC_Kanchanaburi_Report_${new Date().toISOString().slice(0,10)}.pdf`;
+    const opt = {
+      margin: [10,10,10,10],
+      filename: fname,
+      image: { type:'jpeg', quality:0.98 },
+      html2canvas: { scale:2, useCORS:true, backgroundColor:'#ffffff' },
+      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' },
+      pagebreak: { mode:['css','legacy'] }
+    };
+
+    html2pdf().set(opt).from(container).save().finally(()=>{
+      btn.removeAttribute('disabled');
+      btn.innerHTML = originalHtml;
+    });
+  }catch(err){
+    console.error('Export PDF failed:', err);
+    alert('ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง');
+    btn.removeAttribute('disabled');
+    btn.innerHTML = originalHtml;
+  }
+}
+
+document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
+document.getElementById('exportPdfBtn').addEventListener('click', exportPDF);
 
 window.addEventListener('DOMContentLoaded', init);
 </script>
