@@ -217,8 +217,17 @@
   .rel-empty{padding:16px 0;text-align:center;color:var(--text-muted);font-size:12px;}
   @media(max-width:700px){ .rel-site{width:100px;} .rel-total{width:74px;} }
 
-  /* ---------- printable report (used only for PDF export, off-screen) ---------- */
-  #printReportArea{position:absolute;left:-9999px;top:0;width:1000px;background:#ffffff;color:#1a2b2e;
+  /* ---------- printable report (used only for PDF export) ---------- */
+  #pdfCaptureOverlay{position:fixed;inset:0;z-index:100000;background:#ffffff;overflow:auto;
+    display:none;}
+  #pdfCaptureOverlay.active{display:block;}
+  #pdfGeneratingNotice{position:fixed;top:14px;right:14px;z-index:100001;background:#0B1418;color:#fff;
+    padding:8px 16px;border-radius:8px;font-size:12.5px;font-family:'Inter',sans-serif;display:none;
+    align-items:center;gap:8px;box-shadow:0 6px 18px rgba(0,0,0,.3);}
+  #pdfGeneratingNotice.active{display:flex;}
+  #pdfGeneratingNotice .spin{width:12px;height:12px;border:2px solid rgba(255,255,255,.3);
+    border-top-color:#17B8A6;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;}
+  #printReportArea{width:1000px;max-width:1000px;margin:0 auto;background:#ffffff;color:#1a2b2e;
     font-family:'Inter','Noto Sans Thai',sans-serif;padding:32px;}
   #printReportArea *{box-sizing:border-box;}
   #printReportArea h1{font-family:'Space Grotesk','Noto Sans Thai',sans-serif;font-size:20px;margin:0 0 2px;color:#0B1418;}
@@ -398,7 +407,8 @@
 
 </div>
 
-<div id="printReportArea"></div>
+<div id="pdfCaptureOverlay"><div id="printReportArea"></div></div>
+<div id="pdfGeneratingNotice"><span class="spin"></span><span>กำลังสร้างไฟล์ PDF...</span></div>
 
 <script>
 let ALERTS = []; 
@@ -1226,14 +1236,27 @@ function buildPrintReportHTML(){
 function exportPDF(){
   const btn = document.getElementById('exportPdfBtn');
   const originalHtml = btn.innerHTML;
+  const overlay = document.getElementById('pdfCaptureOverlay');
+  const notice = document.getElementById('pdfGeneratingNotice');
   btn.setAttribute('disabled','disabled');
   btn.innerHTML = 'กำลังสร้างไฟล์...';
+
+  function cleanup(){
+    overlay.classList.remove('active');
+    notice.classList.remove('active');
+    btn.removeAttribute('disabled');
+    btn.innerHTML = originalHtml;
+  }
 
   try{
     const container = document.getElementById('printReportArea');
     container.innerHTML = buildPrintReportHTML();
-    // ให้เบราว์เซอร์คำนวณ layout ของ container ก่อนจับภาพ (สำคัญเมื่อ container วางไว้นอกจอ)
-    const reportHeight = container.scrollHeight;
+
+    // แสดง container จริงบนหน้าจอ (คลุมด้วย overlay ทึบ) เพื่อให้ html2canvas จับภาพได้ถูกต้อง
+    // เนื่องจากการวาง element ไว้นอกจอมักทำให้ html2canvas จับภาพว่างเปล่า
+    overlay.classList.add('active');
+    notice.classList.add('active');
+    overlay.scrollTop = 0;
 
     const fname = `NOC_Kanchanaburi_Report_${new Date().toISOString().slice(0,10)}.pdf`;
     const opt = {
@@ -1243,37 +1266,29 @@ function exportPDF(){
       html2canvas: {
         scale: 2,
         useCORS: true,
+        allowTaint: true,
         backgroundColor: '#ffffff',
-        width: 1000,
-        height: reportHeight,
-        windowWidth: 1000,
-        windowHeight: reportHeight,
-        scrollX: 0,
-        scrollY: 0,
-        x: 0,
-        y: 0
+        logging: false
       },
       jsPDF: { unit:'mm', format:'a4', orientation:'portrait' },
       pagebreak: { mode:['css','legacy'] }
     };
 
-    // รอ 1 เฟรมให้ DOM/ฟอนต์เรนเดอร์เสร็จก่อนแปลงเป็น PDF
+    // รอ 2 เฟรมให้เบราว์เซอร์วาด layout/ฟอนต์ของรายงานให้เสร็จก่อนจับภาพ
     requestAnimationFrame(()=>{
-      setTimeout(()=>{
-        html2pdf().set(opt).from(container).save().catch(err=>{
-          console.error('html2pdf generation error:', err);
-          alert('ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง');
-        }).finally(()=>{
-          btn.removeAttribute('disabled');
-          btn.innerHTML = originalHtml;
-        });
-      }, 50);
+      requestAnimationFrame(()=>{
+        setTimeout(()=>{
+          html2pdf().set(opt).from(container).save().catch(err=>{
+            console.error('html2pdf generation error:', err);
+            alert('ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง');
+          }).finally(cleanup);
+        }, 150);
+      });
     });
   }catch(err){
     console.error('Export PDF failed:', err);
     alert('ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง');
-    btn.removeAttribute('disabled');
-    btn.innerHTML = originalHtml;
+    cleanup();
   }
 }
 
