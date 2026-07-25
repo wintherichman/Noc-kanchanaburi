@@ -893,22 +893,38 @@ function renderCharts(filteredHistory){
     });
   }
 
-  const bySite = {};
-  filteredHistory.forEach(a=>{ 
+  // แยก downtime รายไซต์ตามประเภท (NODE/PON/LINK) เพื่อให้แต่ละแท่งไล่สีตามประเภทที่ทำให้ดับ
+  const bySiteType = {};
+  filteredHistory.forEach(a=>{
     const d = calcDurationMin(a);
-    if(d > 0) bySite[a.site] = (bySite[a.site]||0) + d; 
+    if(d > 0){
+      const t = String(a.type).toUpperCase();
+      if(!bySiteType[a.site]) bySiteType[a.site] = {NODE:0,PON:0,LINK:0,total:0};
+      if(bySiteType[a.site][t]!==undefined) bySiteType[a.site][t]+=d;
+      bySiteType[a.site].total += d;
+    }
   });
-  const top6 = Object.entries(bySite).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const top6Sites = Object.entries(bySiteType)
+    .sort((a,b)=>b[1].total-a[1].total)
+    .slice(0,6);
+  const top6Labels = top6Sites.map(([site])=>site.length>12?site.slice(0,12)+'…':site);
   
   const ctxTop = document.getElementById('chartTop');
   if(ctxTop){
     if(chartTop) chartTop.destroy();
     chartTop = new Chart(ctxTop, {
       type:'bar',
-      data:{ labels: top6.map(t=>t[0].length>12?t[0].slice(0,12)+'…':t[0]),
-        datasets:[{ data: top6.map(t=>Math.round(t[1])), backgroundColor:'#17B8A6', borderRadius:4 }]},
-      options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}},
-        scales:{ x:{grid:{color:'#1C2E33'}, ticks:{font:{size:9}}}, y:{grid:{display:false}, ticks:{font:{size:10}}} } }
+      data:{
+        labels: top6Labels,
+        datasets:[
+          { label:'NODE', data: top6Sites.map(([,v])=>Math.round(v.NODE)), backgroundColor:'#F2A93B', borderRadius:4, stack:'downtime' },
+          { label:'PON', data: top6Sites.map(([,v])=>Math.round(v.PON)), backgroundColor:'#17B8A6', borderRadius:4, stack:'downtime' },
+          { label:'LINK', data: top6Sites.map(([,v])=>Math.round(v.LINK)), backgroundColor:'#8fb8ff', borderRadius:4, stack:'downtime' }
+        ]
+      },
+      options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y',
+        plugins:{ legend:{ display:true, position:'bottom', labels:{boxWidth:10,padding:8,font:{size:10}} } },
+        scales:{ x:{stacked:true, grid:{color:'#1C2E33'}, ticks:{font:{size:9}}}, y:{stacked:true, grid:{display:false}, ticks:{font:{size:10}}} } }
     });
   }
 
