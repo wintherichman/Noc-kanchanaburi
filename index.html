@@ -110,6 +110,7 @@
   .popup-row{font-size:12px;color:var(--text-muted);margin:3px 0;line-height:1.4;}
   .popup-row span{color:var(--text-primary);}
   .popup-alert-line{margin-top:5px;padding-top:4px;border-top:1px solid rgba(28,46,51,.5);}
+  .popup-note{color:var(--signal-amber);font-weight:700;}
 
   /* ---------- KPI stack ---------- */
   .kpi-stack{display:flex;flex-direction:column;gap:10px;}
@@ -390,7 +391,7 @@
     </div>
     <div class="table-scroll">
       <table>
-        <thead><tr><th>สถานะ</th><th>ประเภท</th><th>ไซต์ / พอร์ต / IP</th><th>เริ่ม DOWN</th><th>ระยะเวลาดาวน์</th><th>ลูกค้ากระทบ</th><th>SLA</th><th>Power/Loss</th></tr></thead>
+        <thead><tr><th>สถานะ</th><th>ประเภท</th><th>ไซต์ / พอร์ต / IP</th><th>เริ่ม DOWN</th><th>ระยะเวลาดาวน์</th><th>ลูกค้ากระทบ</th><th>SLA</th><th>Power/Loss/หมายเหตุ</th></tr></thead>
         <tbody id="activeTbody"><tr class="empty-row"><td colspan="8">ไม่มีข้อมูล Active DOWN</td></tr></tbody>
       </table>
     </div>
@@ -489,7 +490,9 @@ function renderTicker(){
     const siteStr = a.type === 'LINK' ? `${a.link_from} → ${a.link_to}` : `${a.site}${a.closure?` (${a.closure})`:''}`;
     const isPon = String(a.type).toUpperCase()==='PON';
     const labelStyle = isPon ? ' style="color:var(--pon-yellow)"' : '';
-    return `<span><b${labelStyle}>${typeLabel(a.type)} DOWN</b> · ${siteStr} · นาน ${fmtDur(durm)}${a.customers?` · ลูกค้า ${a.customers} ราย`:''}</span>`;
+    // [ใหม่] ถ้ามี alarm_note (เช่น "Batt Low Voltage") ให้โชว์ไฮไลต์สีอำพันในตัววิ่งด้วย
+    const noteStr = a.note ? ` <b style="color:var(--signal-amber)">⚡ ${a.note}</b> ·` : '';
+    return `<span><b${labelStyle}>${typeLabel(a.type)} DOWN</b> · ${siteStr}${noteStr} · นาน ${fmtDur(durm)}${a.customers?` · ลูกค้า ${a.customers} ราย`:''}</span>`;
   }).join('');
 }
 
@@ -560,8 +563,10 @@ function renderMapMarkers(){
       const durm = calcDurationMin(a);
       const siteDesc = a.type === 'LINK' ? `${a.link_from} <br>&rarr; ${a.link_to}` : `${a.site}${a.closure?` (พอร์ต ${a.closure})`:''}`;
       const metrics = a.type === 'PON' ? `<br>Tx/Loss: ${a.tx_power||'—'}/${a.loss||'—'}` : '';
+      // [ใหม่] แสดง alarm_note (เช่น "Batt Low Voltage") ไฮไลต์สีอำพันใน popup
+      const noteHtml = a.note ? `<br><span class="popup-note">⚡ ${a.note}</span>` : '';
       return `<div class="popup-alert-line">
-        <b style="color:${typeColor(a.type)}">${typeLabel(a.type)}</b>: ${siteDesc}
+        <b style="color:${typeColor(a.type)}">${typeLabel(a.type)}</b>: ${siteDesc}${noteHtml}
         <br>เริ่ม: ${fmtDT(a.down)} (นาน ${fmtDur(durm)})
         <br>ลูกค้า: <span>${a.customers || '—'}</span> ราย · SLA: <span>${a.sla || '—'}</span>${metrics}
       </div>`;
@@ -634,6 +639,11 @@ function renderActiveTable(){
     let metrics = '—';
     if(a.type==='PON'){ metrics = `${a.tx_power||'—'} / ${a.loss||'—'} dB`; }
     else if(a.dying_gasp==='1'){ metrics = '<b>Dying Gasp</b>'; }
+    // [ใหม่] ถ้ามี alarm_note (เช่น "Batt Low Voltage") ให้โชว์นำหน้าค่า metrics เดิม
+    if(a.note){
+      const noteBadge = `<b style="color:var(--signal-amber)">⚡ ${a.note}</b>`;
+      metrics = metrics !== '—' ? `${noteBadge} · ${metrics}` : noteBadge;
+    }
 
     return `<tr>
       <td><span class="badge down"><span class="dot"></span>DOWN</span></td>
@@ -856,6 +866,9 @@ function renderHistoryTable(filteredHistory){
     const isUp = !!a.up;
     const durm = calcDurationMin(a);
     const siteDesc = a.type === 'LINK' ? `${a.link_from} → ${a.link_to}` : `${a.site}${a.closure?` (${a.closure})`:''}`;
+    // [ใหม่] ถ้ามี alarm_note ให้แสดงต่อท้ายคอลัมน์สาเหตุ/รายละเอียด
+    const causeText = a.root_cause || (isUp?'—':'อยู่ระหว่างตรวจสอบ');
+    const causeDisplay = a.note ? `⚡ ${a.note}${a.root_cause?` · ${causeText}`:''}` : causeText;
     
     return `<tr>
       <td>${isUp ? '<span class="badge up"><span class="dot"></span>UP</span>' : '<span class="badge down"><span class="dot"></span>DOWN</span>'}</td>
@@ -865,7 +878,7 @@ function renderHistoryTable(filteredHistory){
       <td class="mono">${isUp ? fmtDT(a.up) : '—'}</td>
       <td class="mono">${fmtDur(durm)}</td>
       <td>${a.customers ?? '—'}</td>
-      <td style="color:var(--text-muted);font-size:11.5px;">${a.root_cause || (isUp?'—':'อยู่ระหว่างตรวจสอบ')}</td>
+      <td style="color:var(--text-muted);font-size:11.5px;">${causeDisplay}</td>
     </tr>`;
   }).join('');
 }
@@ -1012,6 +1025,8 @@ function rowsToIncidents(rows){
       tx_power: d.tx_power, 
       loss: d.loss, 
       dying_gasp: d.dying_gasp,
+      // [ใหม่] alarm_note เช่น "Batt Low Voltage" — ดึงจากแถว DOWN ก่อน ถ้าไม่มีลองดูแถว UP ที่จับคู่
+      note: d.alarm_note || (upRow && upRow.alarm_note) || '',
       root_cause: (upRow && upRow.root_cause) || d.root_cause || ''
     };
   });
@@ -1143,25 +1158,25 @@ function exportExcel(){
     XLSX.utils.book_append_sheet(wb, wsSummary, 'สรุปภาพรวม');
 
     // --- Sheet 2: Active Alerts ---
-    const activeHeader = ['สถานะ','ประเภท','ไซต์','พอร์ต/ลิงก์','IP','เริ่ม DOWN','ระยะเวลาดาวน์ (นาที)','ลูกค้ากระทบ','SLA','Tx Power','Loss','Dying Gasp'];
+    const activeHeader = ['สถานะ','ประเภท','ไซต์','พอร์ต/ลิงก์','IP','เริ่ม DOWN','ระยะเวลาดาวน์ (นาที)','ลูกค้ากระทบ','SLA','หมายเหตุ','Tx Power','Loss','Dying Gasp'];
     const activeRows = active.map(a=>{
       const durm = calcDurationMin(a);
       const portOrLink = a.type==='LINK' ? `${a.link_from} → ${a.link_to}` : (a.closure||'');
       return ['DOWN', typeLabel(a.type), a.site||'', portOrLink, a.ip||'', fmtDT(a.down),
-        durm!=null?Math.round(durm):'', a.customers??'', a.sla??'', a.tx_power||'', a.loss||'', a.dying_gasp==='1'?'ใช่':''];
+        durm!=null?Math.round(durm):'', a.customers??'', a.sla??'', a.note||'', a.tx_power||'', a.loss||'', a.dying_gasp==='1'?'ใช่':''];
     });
     const wsActive = XLSX.utils.aoa_to_sheet([activeHeader, ...activeRows]);
     wsActive['!cols'] = activeHeader.map(()=>({wch:16}));
     XLSX.utils.book_append_sheet(wb, wsActive, 'Active Alerts');
 
     // --- Sheet 3: History ---
-    const histHeader = ['สถานะ','ประเภท','ไซต์','พอร์ต/ลิงก์','เริ่ม DOWN','กู้คืนเมื่อ','ระยะเวลา (นาที)','ลูกค้ากระทบ','SLA','สาเหตุ/รายละเอียด'];
+    const histHeader = ['สถานะ','ประเภท','ไซต์','พอร์ต/ลิงก์','เริ่ม DOWN','กู้คืนเมื่อ','ระยะเวลา (นาที)','ลูกค้ากระทบ','SLA','หมายเหตุ','สาเหตุ/รายละเอียด'];
     const histRows = history.map(a=>{
       const isUp = !!a.up;
       const durm = calcDurationMin(a);
       const portOrLink = a.type==='LINK' ? `${a.link_from} → ${a.link_to}` : (a.closure||'');
       return [isUp?'UP':'DOWN', typeLabel(a.type), a.site||'', portOrLink, fmtDT(a.down), isUp?fmtDT(a.up):'',
-        durm!=null?Math.round(durm):'', a.customers??'', a.sla??'', a.root_cause || (isUp?'':'อยู่ระหว่างตรวจสอบ')];
+        durm!=null?Math.round(durm):'', a.customers??'', a.sla??'', a.note||'', a.root_cause || (isUp?'':'อยู่ระหว่างตรวจสอบ')];
     });
     const wsHist = XLSX.utils.aoa_to_sheet([histHeader, ...histRows]);
     wsHist['!cols'] = histHeader.map(()=>({wch:18}));
@@ -1199,12 +1214,12 @@ function buildPrintReportHTML(){
 
   const activeRowsHtml = active.length===0
     ? '<div class="pr-empty">สถานะปกติ — ไม่มีปัญหาค้าง</div>'
-    : `<table><thead><tr><th>ประเภท</th><th>ไซต์</th><th>พอร์ต/ลิงก์</th><th>เริ่ม DOWN</th><th>ระยะเวลา</th><th>ลูกค้ากระทบ</th><th>SLA</th></tr></thead><tbody>
+    : `<table><thead><tr><th>ประเภท</th><th>ไซต์</th><th>พอร์ต/ลิงก์</th><th>เริ่ม DOWN</th><th>ระยะเวลา</th><th>ลูกค้ากระทบ</th><th>SLA</th><th>หมายเหตุ</th></tr></thead><tbody>
         ${active.map(a=>{
           const durm = calcDurationMin(a);
           const portOrLink = a.type==='LINK' ? `${a.link_from} → ${a.link_to}` : (a.closure||'—');
           return `<tr><td><span class="pr-badge down">DOWN</span> ${typeLabel(a.type)}</td><td>${a.site||''}</td><td>${portOrLink}</td>
-            <td>${fmtDT(a.down)}</td><td>${fmtDur(durm)}</td><td>${a.customers??'—'}</td><td>${a.sla??'—'}</td></tr>`;
+            <td>${fmtDT(a.down)}</td><td>${fmtDur(durm)}</td><td>${a.customers??'—'}</td><td>${a.sla??'—'}</td><td>${a.note||'—'}</td></tr>`;
         }).join('')}
       </tbody></table>`;
 
@@ -1215,9 +1230,11 @@ function buildPrintReportHTML(){
           const isUp = !!a.up;
           const durm = calcDurationMin(a);
           const siteDesc = a.type === 'LINK' ? `${a.link_from} → ${a.link_to}` : `${a.site}${a.closure?` (${a.closure})`:''}`;
+          const causeText = a.root_cause || (isUp?'—':'อยู่ระหว่างตรวจสอบ');
+          const causeDisplay = a.note ? `⚡ ${a.note}${a.root_cause?` · ${causeText}`:''}` : causeText;
           return `<tr><td><span class="pr-badge ${isUp?'up':'down'}">${isUp?'UP':'DOWN'}</span></td><td>${typeLabel(a.type)}</td><td>${siteDesc}</td>
             <td>${fmtDT(a.down)}</td><td>${isUp?fmtDT(a.up):'—'}</td><td>${fmtDur(durm)}</td>
-            <td>${a.root_cause || (isUp?'—':'อยู่ระหว่างตรวจสอบ')}</td></tr>`;
+            <td>${causeDisplay}</td></tr>`;
         }).join('')}
       </tbody></table>${fh.length>150?`<div class="pr-footer">แสดง 150 รายการล่าสุดจากทั้งหมด ${fh.length} รายการ — ดูรายการทั้งหมดได้ในไฟล์ Excel</div>`:''}`;
 
